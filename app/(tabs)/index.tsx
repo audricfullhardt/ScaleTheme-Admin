@@ -1,98 +1,136 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import React, { useEffect, useState } from "react";
+import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+// Configuration du comportement des notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
-export default function HomeScreen() {
+export default function App() {
+  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
+  const [notification, setNotification] =
+    useState<Notifications.Notification | null>(null);
+
+  useEffect(() => {
+    registerForPushNotificationsAsync().then((token) => {
+      if (token) setExpoPushToken(token);
+    });
+
+    // Listener pour les notifications reçues
+    const subscriptionReceived = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        setNotification(notification);
+      }
+    );
+
+    // Listener quand l'utilisateur interagit avec la notif
+    const subscriptionResponse =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        console.log(
+          "Notification ouverte :",
+          response.notification.request.content
+        );
+      });
+
+    return () => {
+      subscriptionReceived.remove();
+      subscriptionResponse.remove();
+    };
+  }, []);
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Text style={styles.title}>ScaleTheme Admin</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <Text style={styles.label}>Expo Push Token :</Text>
+      <Text style={styles.token}>{expoPushToken ?? "Chargement..."}</Text>
+
+      {notification && (
+        <View style={styles.notificationBox}>
+          <Text style={styles.notificationTitle}>
+            🔔 {notification.request.content.title}
+          </Text>
+          <Text>{notification.request.content.body}</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
+async function registerForPushNotificationsAsync(): Promise<string | null> {
+  if (!Device.isDevice) {
+    alert(
+      "Les notifications push ne fonctionnent pas sur un simulateur iOS. Teste sur un vrai iPhone."
+    );
+    return null;
+  }
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== "granted") {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== "granted") {
+    alert("Permission de notifications refusée !");
+    return null;
+  }
+
+  const projectId = Constants?.expoConfig?.extra?.eas?.projectId;
+  const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+  console.log("Expo Push Token :", token);
+
+  if (Platform.OS === "android") {
+    Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+    });
+  }
+
+  return token;
+}
+
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fafafa",
+    padding: 20,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  label: {
+    fontWeight: "600",
+  },
+  token: {
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 20,
+    color: "#666",
+  },
+  notificationBox: {
+    marginTop: 20,
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    width: "100%",
+  },
+  notificationTitle: {
+    fontWeight: "700",
+    marginBottom: 4,
   },
 });
